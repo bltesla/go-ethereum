@@ -27,6 +27,7 @@ import (
 	"strings"
 	"sync"
 	"time"
+	"unicode"
 )
 
 const (
@@ -114,7 +115,7 @@ func (msg *jsonrpcMessage) errorResponse(err error) *jsonrpcMessage {
 }
 
 func (msg *jsonrpcMessage) response(result interface{}) *jsonrpcMessage {
-	enc, err := json.Marshal(result)
+	enc, err := json.Marshal(camelCaseKeys(result))
 	if err != nil {
 		return msg.errorResponse(&internalServerError{errcodeMarshalError, err.Error()})
 	}
@@ -367,4 +368,85 @@ func parseSubscriptionName(rawArgs json.RawMessage) (string, error) {
 		return "", errors.New("expected subscription name as first argument")
 	}
 	return method, nil
+}
+
+func camelCaseKeys(val interface{}) interface{} {
+	if val == nil {
+		return nil
+	}
+
+	// If the value implements json.Marshaler, use it as is.
+	if _, ok := val.(json.Marshaler); ok {
+		return val
+	}
+
+	v := reflect.ValueOf(val)
+	switch v.Kind() {
+	case reflect.Ptr:
+		if v.IsNil() {
+			return nil
+		}
+		return camelCaseKeys(v.Elem().Interface())
+	case reflect.Struct:
+		t := v.Type()
+		out := make(map[string]interface{})
+		for i := 0; i < t.NumField(); i++ {
+			field := t.Field(i)
+			if field.PkgPath != "" { // Skip unexported fields
+				continue
+			}
+			val := v.Field(i).Interface()
+			tag := field.Tag.Get("json")
+			key := field.Name
+			if tag != "" {
+				parts := strings.Split(tag, ",")
+				if parts[0] == "-" {
+					continue
+				}
+				if parts[0] != "" {
+					key = parts[0]
+				}
+				// If tag is present, we generally respect it.
+				// existing behavior: use key as is.
+			} else {
+				// No json tag, apply camelCase
+				key = toCamelCase(key)
+			}
+			out[key] = camelCaseKeys(val)
+		}
+		return out
+	case reflect.Slice:
+		l := v.Len()
+		out := make([]interface{}, l)
+		for i := 0; i < l; i++ {
+			out[i] = camelCaseKeys(v.Index(i).Interface())
+		}
+		return out
+	case reflect.Array:
+		l := v.Len()
+		out := make([]interface{}, l)
+		for i := 0; i < l; i++ {
+			out[i] = camelCaseKeys(v.Index(i).Interface())
+		}
+		return out
+	case reflect.Map:
+		out := make(map[string]interface{})
+		iter := v.MapRange()
+		for iter.Next() {
+			// Map keys are not transformed, only values are recursively processed
+			out[fmt.Sprint(iter.Key().Interface())] = camelCaseKeys(iter.Value().Interface())
+		}
+		return out
+	default:
+		return val
+	}
+}
+
+func toCamelCase(s string) string {
+	if s == "" {
+		return ""
+	}
+	r := []rune(s)
+	r[0] = unicode.ToLower(r[0])
+	return string(r)
 }

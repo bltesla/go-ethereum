@@ -5,11 +5,18 @@ import (
 	"testing"
 )
 
+type TestBase struct {
+	Height int
+	Type   string
+}
 type TestStruct struct {
-	MyField      string
-	Tagged       string `json:"tagged"`
-	Nested       NestedStruct
-	NestedTagged NestedStruct `json:"nestedTagged"`
+	TestBase
+	MyField       string
+	Tagged        string `json:"tagged"`
+	Nested        NestedStruct
+	NestedTagged  NestedStruct `json:"nestedTagged"`
+	HTTPServerUrl string
+	REF           string
 }
 
 type NestedStruct struct {
@@ -18,10 +25,13 @@ type NestedStruct struct {
 
 func TestDefaultMarshaling(t *testing.T) {
 	val := TestStruct{
-		MyField:      "val1",
-		Tagged:       "val2",
-		Nested:       NestedStruct{InnerField: "inner1"},
-		NestedTagged: NestedStruct{InnerField: "inner2"},
+		TestBase:      TestBase{Height: 100, Type: "exampleType"},
+		MyField:       "val1",
+		Tagged:        "val2",
+		Nested:        NestedStruct{InnerField: "inner1"},
+		NestedTagged:  NestedStruct{InnerField: "inner2"},
+		HTTPServerUrl: "http://example.com",
+		REF:           "refvalue",
 	}
 
 	// We need to call the internal helper camelCaseKeys directly to verify its behavior

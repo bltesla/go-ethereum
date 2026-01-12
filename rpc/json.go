@@ -19,6 +19,7 @@ package rpc
 import (
 	"bytes"
 	"context"
+	"encoding"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -27,7 +28,8 @@ import (
 	"strings"
 	"sync"
 	"time"
-	"unicode"
+
+	"github.com/iancoleman/strcase"
 )
 
 const (
@@ -375,8 +377,11 @@ func camelCaseKeys(val interface{}) interface{} {
 		return nil
 	}
 
-	// If the value implements json.Marshaler, use it as is.
+	// If the value implements json.Marshaler or encoding.TextMarshaler, use it as is.
 	if _, ok := val.(json.Marshaler); ok {
+		return val
+	}
+	if _, ok := val.(encoding.TextMarshaler); ok {
 		return val
 	}
 
@@ -388,6 +393,28 @@ func camelCaseKeys(val interface{}) interface{} {
 		}
 		return camelCaseKeys(v.Elem().Interface())
 	case reflect.Struct:
+		// Check if pointer to struct implements Marshaler interfaces
+		if v.CanAddr() {
+			pv := v.Addr().Interface()
+			if _, ok := pv.(json.Marshaler); ok {
+				return pv
+			}
+			if _, ok := pv.(encoding.TextMarshaler); ok {
+				return pv
+			}
+		} else {
+			// If not addressable, try creating a pointer to a copy
+			pv := reflect.New(v.Type())
+			pv.Elem().Set(v)
+			pvi := pv.Interface()
+			if _, ok := pvi.(json.Marshaler); ok {
+				return pvi
+			}
+			if _, ok := pvi.(encoding.TextMarshaler); ok {
+				return pvi
+			}
+		}
+
 		t := v.Type()
 		out := make(map[string]interface{})
 		for i := 0; i < t.NumField(); i++ {
@@ -408,10 +435,22 @@ func camelCaseKeys(val interface{}) interface{} {
 				}
 				// If tag is present, we generally respect it.
 				// existing behavior: use key as is.
+			} else if field.Anonymous {
+				// Embedded field without a tag should be flattened.
+				// Recursively process the field's value.
+				embedded := camelCaseKeys(val)
+				if m, ok := embedded.(map[string]interface{}); ok {
+					for ek, ev := range m {
+						out[ek] = ev
+					}
+					continue
+				}
+				// Fallback if it's not a map (though usually it should be for structs)
+				key = strcase.ToLowerCamel(key)
 			} else {
 				// No json tag, apply camelCase
 				// key = toCamelCase(key)
-				key = toCamelCaseByte(key)
+				key = strcase.ToLowerCamel(key)
 			}
 			out[key] = camelCaseKeys(val)
 		}
@@ -441,24 +480,4 @@ func camelCaseKeys(val interface{}) interface{} {
 	default:
 		return val
 	}
-}
-
-func toCamelCase(s string) string {
-	if s == "" {
-		return ""
-	}
-	r := []rune(s)
-	r[0] = unicode.ToLower(r[0])
-	return string(r)
-}
-
-func toCamelCaseByte(s string) string {
-	if s == "" {
-		return s
-	}
-	b := []byte(s)
-	if b[0] >= 'A' && b[0] <= 'Z' {
-		b[0] += 'a' - 'A'
-	}
-	return string(b)
 }

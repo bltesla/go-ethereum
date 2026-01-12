@@ -410,7 +410,8 @@ func camelCaseKeys(val interface{}) interface{} {
 				// existing behavior: use key as is.
 			} else {
 				// No json tag, apply camelCase
-				key = toCamelCase(key)
+				// key = toCamelCase(key)
+				key = toCamelCaseByte(key)
 			}
 			out[key] = camelCaseKeys(val)
 		}
@@ -449,4 +450,15 @@ func toCamelCase(s string) string {
 	r := []rune(s)
 	r[0] = unicode.ToLower(r[0])
 	return string(r)
+}
+
+func toCamelCaseByte(s string) string {
+	if s == "" {
+		return s
+	}
+	b := []byte(s)
+	if b[0] >= 'A' && b[0] <= 'Z' {
+		b[0] += 'a' - 'A'
+	}
+	return string(b)
 }

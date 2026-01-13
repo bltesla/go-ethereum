@@ -386,6 +386,25 @@ func camelCaseKeys(val interface{}) interface{} {
 	}
 
 	v := reflect.ValueOf(val)
+	if v.Kind() != reflect.Ptr && v.Kind() != reflect.Invalid {
+		// Check if pointer to value implements Marshaler interfaces
+		var pv interface{}
+		if v.CanAddr() {
+			pv = v.Addr().Interface()
+		} else {
+			// If not addressable, try creating a pointer to a copy
+			tmp := reflect.New(v.Type())
+			tmp.Elem().Set(v)
+			pv = tmp.Interface()
+		}
+		if _, ok := pv.(json.Marshaler); ok {
+			return pv
+		}
+		if _, ok := pv.(encoding.TextMarshaler); ok {
+			return pv
+		}
+	}
+
 	switch v.Kind() {
 	case reflect.Ptr:
 		if v.IsNil() {
@@ -393,28 +412,6 @@ func camelCaseKeys(val interface{}) interface{} {
 		}
 		return camelCaseKeys(v.Elem().Interface())
 	case reflect.Struct:
-		// Check if pointer to struct implements Marshaler interfaces
-		if v.CanAddr() {
-			pv := v.Addr().Interface()
-			if _, ok := pv.(json.Marshaler); ok {
-				return pv
-			}
-			if _, ok := pv.(encoding.TextMarshaler); ok {
-				return pv
-			}
-		} else {
-			// If not addressable, try creating a pointer to a copy
-			pv := reflect.New(v.Type())
-			pv.Elem().Set(v)
-			pvi := pv.Interface()
-			if _, ok := pvi.(json.Marshaler); ok {
-				return pvi
-			}
-			if _, ok := pvi.(encoding.TextMarshaler); ok {
-				return pvi
-			}
-		}
-
 		t := v.Type()
 		out := make(map[string]interface{})
 		for i := 0; i < t.NumField(); i++ {
